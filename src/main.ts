@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { HeadTracker } from "./head-tracker";
 import { createCalibrationUI, applyCameraTransform } from "./calibration";
-import { createScene, animateScene } from "./scene";
+import { createScene } from "./scene";
 import { MMDManager } from "./mmd";
 import { DebugOverlay } from "./debug-overlay";
 import type { CalibrationParams } from "./calibration";
@@ -23,31 +23,34 @@ async function main(): Promise<void> {
   /* ---- debug overlay ---- */
   const debug = new DebugOverlay();
   debug.update("Starting...");
-  /* ---- Three.js renderer ---- */
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+
+  /* ---- scene, room, box ---- */
+  const { scene, calibrationGroup, mainGroup, box, room } = createScene();
+
+  /* ---- camera: FOV=75, near=0.01 ---- */
+  const camera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth / window.innerHeight,
+    0.01,
+    100,
+  );
+
+  /* ---- calibration UI (Tweakpane) ---- */
+  const { params } = createCalibrationUI(app);
+  const cal: CalibrationParams = params;
+
+  /* ---- renderer ---- */
+  const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    logarithmicDepthBuffer: true,
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.2;
+  renderer.toneMappingExposure = 1.0;
   app.appendChild(renderer.domElement);
-
-  /* ---- scene & camera ---- */
-  const { scene, calibrationGroup, mainGroup } = createScene();
-
-  const camera = new THREE.PerspectiveCamera(
-    55,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    100,
-  );
-  camera.position.set(0, 0, 4);
-
-  /* ---- calibration UI (Tweakpane) ---- */
-  const { params } = createCalibrationUI(app);
-  // keep a typed ref for the render loop
-  const cal: CalibrationParams = params;
 
   /* ---- head tracker ---- */
   const tracker = new HeadTracker(video);
@@ -56,65 +59,33 @@ async function main(): Promise<void> {
     debug.update("Loading MediaPipe FaceMesh from CDN...");
     await tracker.start();
     video.style.display = "block";
-    debug.update("Head tracker running ✓<br>Move your head to see the effect.");
+    debug.update("Head tracker running — move your head to see the effect.");
     cal.headTrack = true;
   } catch (err) {
     console.error("Head tracker failed to start:", err);
     const msg = err instanceof Error ? err.message : String(err);
     debug.update(
-      `<span style="color:#f44">HEAD TRACKER FAILED:</span><br>${msg}<br><br>Falling back to demo mode.`
+      `<span style="color:#f44">HEAD TRACKER FAILED:</span><br>${msg}<br><br>Demo mode (no tracking).`,
     );
     setStatus("Camera not available — demo mode (no tracking)");
     cal.headTrack = false;
   }
 
-  /* ---- MMD models (optional — loads if files exist) ---- */
+  /* ---- Luo Tianyi MMD model + animation ---- */
+  const luoModelPath = "./mmd/model/牛肉式 洛天依AI Ver1.01/牛肉式 洛天依AI Ver1.01.pmx";
+  const vmdPath = "./mmd/vmd/badwater/我的悲伤是水做的动作数据配布.vmd";
   let mmd: MMDManager | null = null;
-  const mmdLoadPromises: Promise<void>[] = [];
-
+  let mmdMesh: THREE.SkinnedMesh | null = null;
   try {
+    setStatus("Loading Luo Tianyi model...");
     mmd = new MMDManager(mainGroup);
-
-    // Create platforms like the old project
-    function createPlatform(x: number): void {
-      const geo = new THREE.BoxGeometry();
-      const mat = new THREE.MeshStandardMaterial({
-        opacity: 0.4,
-        transparent: true,
-        color: 0x8888ff,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.scale.set(0.4, 0.01, 8);
-      mesh.position.set(x, -0.25, 2);
-      mesh.receiveShadow = true;
-      mainGroup.add(mesh);
-    }
-
-    async function tryLoadMiku(
-      modelPath: string,
-      x: number,
-    ): Promise<THREE.SkinnedMesh | null> {
-      try {
-        setStatus(`Loading MMD model: ${modelPath}`);
-        const mesh = await mmd!.load(modelPath, [
-          "./mmd/vmds/wavefile_v2.vmd",
-        ]);
-        mesh.position.set(x, -0.25, 2);
-        mesh.rotation.y = 0;
-        createPlatform(x);
-        return mesh;
-      } catch {
-        console.warn(`MMD model not found (skipped): ${modelPath}`);
-        return null;
-      }
-    }
-
-    mmdLoadPromises.push(
-      tryLoadMiku("./mmd/miku-yyb/miku.pmx", -0.5).then(() => {}),
-      tryLoadMiku("./mmd/牛肉式 洛天依AI Ver1.01/牛肉式 洛天依AI Ver1.01.pmx", 0.5).then(() => {}),
-    );
+    mmdMesh = await mmd.load(luoModelPath, [vmdPath]);
+    mmdMesh.scale.setScalar(0.15);
+    mmdMesh.position.set(0, -1.7, -2.8);
+    mmdMesh.rotation.y = 0;
+    debug.update("Luo Tianyi loaded ✓");
   } catch {
-    console.warn("MMD modules unavailable — skipping MMD support");
+    console.warn("Luo Tianyi model not found (skipped):", luoModelPath);
   }
 
   /* ---- loading complete ---- */
@@ -131,20 +102,24 @@ async function main(): Promise<void> {
    *  RENDER LOOP
    * =================================================================== */
 
-  const clock = new THREE.Clock();
-
-  // FPS tracking
   let frames = 0;
   let fpsTime = 0;
   let fps = 0;
+  const clock = new THREE.Clock();
 
   function render(): void {
     requestAnimationFrame(render);
 
-    const dt = Math.min(clock.getDelta(), 0.1); // cap to avoid spiral
+    const dt = Math.min(clock.getDelta(), 0.1);
     const aspect = window.innerWidth / window.innerHeight;
 
-    // FPS counter
+    // toggle overlays
+    video.style.display = cal.showFacePreview ? "block" : "none";
+    const faceOverlay = document.getElementById("face-mesh-overlay");
+    if (faceOverlay) faceOverlay.style.display = cal.showFacePreview ? "block" : "none";
+    debug.el.style.display = cal.showFps ? "block" : "none";
+
+    // FPS counter (update every 0.5 s)
     frames++;
     fpsTime += dt;
     if (fpsTime >= 0.5) {
@@ -152,17 +127,16 @@ async function main(): Promise<void> {
       frames = 0;
       fpsTime = 0;
 
-      // Update debug overlay with tracking info
       if (cal.headTrack && tracker.ready) {
         debug.update(
           `FPS: ${fps}` +
             ` | pupil: (${tracker.centralPupilX.toFixed(3)}, ${tracker.centralPupilY.toFixed(3)})` +
-            ` | IPD: ${tracker.ipd.toFixed(4)}` +
+            ` | IPD: ${tracker.ipd.toFixed(4)} (pix: ${tracker.ipdPixels.toFixed(0)})` +
             ` | cam: (${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)})`,
         );
       } else if (!cal.headTrack) {
         debug.update(
-          `FPS: ${fps} | <span style="color:#f44">HEAD TRACKING OFF</span> (check Tweakpane toggle)`,
+          `FPS: ${fps} | <span style="color:#f44">HEAD TRACKING OFF</span>`,
         );
       } else {
         debug.update(
@@ -171,9 +145,34 @@ async function main(): Promise<void> {
       }
     }
 
-    // toggle groups
+    // toggle backgrounds: room (non-calibration) vs wireframe box (calibration)
+    room.visible = !cal.calibrationScene;
+    box.visible = cal.calibrationScene;
     calibrationGroup.visible = cal.calibrationScene;
-    mainGroup.visible = !cal.calibrationScene;
+    if (mmdMesh) mmdMesh.visible = !cal.calibrationScene;
+
+    // frustum bounds from aspect ratio (old project pattern)
+    let left = -1;
+    let right = 1;
+    let top = 1;
+    let down = -1;
+
+    if (aspect > 1) {
+      left = -aspect;
+      right = aspect;
+    } else {
+      down = -1 / aspect;
+      top = 1 / aspect;
+    }
+
+    // scale both backgrounds to fill frustum
+    const sx = right - left;
+    const sy = top - down;
+    box.scale.set(sx, sy, 8);
+    room.scale.set(sx, sy, 8);
+
+    // MMD animation
+    if (mmd) mmd.update(dt);
 
     // head tracking → camera
     if (cal.headTrack && tracker.ready) {
@@ -181,35 +180,27 @@ async function main(): Promise<void> {
         camera,
         tracker.centralPupilX,
         tracker.centralPupilY,
-        tracker.ipd,
+        tracker.ipdPixels,
+        left,
+        right,
+        top,
+        down,
         cal,
-        aspect,
       );
     } else {
-      // fallback: static camera at a comfortable distance
-      camera.position.set(0, 0, 4);
-      camera.lookAt(0, 0, 0);
+      camera.position.set(0, 0, 8);
+      camera.updateMatrix();
+
+      const near = 0.01;
       camera.projectionMatrix.makePerspective(
-        -(aspect * 0.6),
-        aspect * 0.6,
-        0.6,
-        -0.6,
-        0.1,
+        (left * near) / 8,
+        (right * near) / 8,
+        (-down * near) / 8,
+        (-top * near) / 8,
+        near,
         100,
       );
     }
-
-    // MMD animation
-    if (mmd) mmd.update(dt);
-
-    // floating-object animation
-    animateScene(mainGroup, clock.elapsedTime);
-
-    // stars slow rotation
-    const stars = mainGroup.children.find(
-      (c: THREE.Object3D) => c instanceof THREE.Points,
-    ) as THREE.Points | undefined;
-    if (stars) stars.rotation.y += dt * 0.02;
 
     renderer.render(scene, camera);
   }
@@ -217,8 +208,6 @@ async function main(): Promise<void> {
   /* ---- resize ---- */
   window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
   });
 
   /* ---- kick off ---- */

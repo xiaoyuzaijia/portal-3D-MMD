@@ -3,7 +3,7 @@
  * so you don't need to open the browser console during development.
  */
 export class DebugOverlay {
-  private el: HTMLDivElement;
+  readonly el: HTMLDivElement;
 
   constructor() {
     this.el = document.createElement("div");

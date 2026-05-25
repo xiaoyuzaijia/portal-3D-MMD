@@ -4,7 +4,7 @@ node_modules/
 # === 构建产物 ===
 dist/
 
-# === MMD 模型文件（不纳入版本控制） ===
+# === MMD 模型文件===
 public/mmd/
 
 # === 旧参考项目 ===
@@ -20,6 +20,7 @@ old/
 !.vscode/settings.json
 !.vscode/extensions.json
 .idea/
+.claude/
 
 # === 操作系统 ===
 .DS_Store

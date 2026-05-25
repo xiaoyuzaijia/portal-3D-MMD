@@ -43,6 +43,11 @@ export class HeadTracker {
   centralPupilY = 0;
   ipd = 0.08;
 
+  /** IPD converted to approximate pixel space for the old calibration formula. */
+  get ipdPixels(): number {
+    return this.ipd * (this.video.videoWidth || 640);
+  }
+
   private rawPupilX = 0;
   private rawPupilY = 0;
   private rawIpd = 0.08;

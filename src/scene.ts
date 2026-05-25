@@ -1,129 +1,206 @@
 import * as THREE from "three";
 
 /**
- * Builds the renderable 3-D scene.
- * Returns the scene object, the calibration group (checkerboard cube),
- * and the main content group so callers can toggle visibility.
+ * Builds the 3-D scene.
+ *
+ * Two interchangeable backgrounds:
+ *   room — cream walls & floor (non-calibration)
+ *   box  — wireframe room (calibration mode)
+ *
+ * Caller scales both to frustum bounds and toggles visibility.
  */
 export function createScene(): {
   scene: THREE.Scene;
   calibrationGroup: THREE.Group;
   mainGroup: THREE.Group;
+  box: THREE.Group;
+  room: THREE.Group;
 } {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x111122);
 
-  /* ---- lighting ---- */
-  scene.add(new THREE.AmbientLight(0x404060, 2));
+  /* ---- lights ---- */
+  scene.add(createLights());
 
-  const dir = new THREE.DirectionalLight(0xffffff, 3);
-  dir.position.set(5, 10, 5);
-  dir.castShadow = true;
-  dir.shadow.mapSize.set(2048, 2048);
-  dir.shadow.camera.near = 0.5;
-  dir.shadow.camera.far = 50;
-  dir.shadow.camera.left = -10;
-  dir.shadow.camera.right = 10;
-  dir.shadow.camera.top = 10;
-  dir.shadow.camera.bottom = -10;
-  scene.add(dir);
-
-  const point1 = new THREE.PointLight(0x4444ff, 30, 20);
-  point1.position.set(-3, 2, 0);
-  scene.add(point1);
-
-  const point2 = new THREE.PointLight(0xff44ff, 30, 20);
-  point2.position.set(3, 2, 0);
-  scene.add(point2);
-
-  /* ---- main content group ---- */
-  const mainGroup = new THREE.Group();
-  scene.add(mainGroup);
-
-  /* ---- ground ---- */
-  const groundGeo = new THREE.PlaneGeometry(20, 20);
-  const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x222233,
-    roughness: 0.9,
-  });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -3;
-  ground.receiveShadow = true;
-  mainGroup.add(ground);
-
-  /* ---- grid ---- */
-  const grid = new THREE.GridHelper(20, 20, 0x444466, 0x222244);
-  grid.position.y = -2.99;
-  mainGroup.add(grid);
-
-  /* ---- floating decorations ---- */
-  const colours = [0xff3333, 0x33ff33, 0x3333ff, 0xffff33, 0xff33ff, 0x33ffff];
-  for (let i = 0; i < 6; i++) {
-    const sgeo = new THREE.SphereGeometry(0.25, 32, 32);
-    const smat = new THREE.MeshStandardMaterial({
-      color: colours[i],
-      roughness: 0.2,
-      metalness: 0.3,
-      emissive: colours[i],
-      emissiveIntensity: 0.3,
-    });
-    const sphere = new THREE.Mesh(sgeo, smat);
-    const angle = (i / 6) * Math.PI * 2;
-    sphere.position.set(Math.cos(angle) * 2.5, Math.sin(i * 1.5) * 1.5, Math.sin(angle) * 2);
-    sphere.castShadow = true;
-    sphere.userData = {
-      floatSpeed: 0.5 + Math.random() * 1.5,
-      rotSpeed: 0.5 + Math.random(),
-      baseY: sphere.position.y,
-      phase: Math.random() * Math.PI * 2,
-    };
-    mainGroup.add(sphere);
-  }
-
-  /* ---- starfield ---- */
-  const starsGeo = new THREE.BufferGeometry();
-  const starCount = 400;
-  const starPositions = new Float32Array(starCount * 3);
-  for (let i = 0; i < starCount; i++) {
-    starPositions[i * 3] = (Math.random() - 0.5) * 30;
-    starPositions[i * 3 + 1] = (Math.random() - 0.5) * 20;
-    starPositions[i * 3 + 2] = (Math.random() - 0.5) * 20;
-  }
-  starsGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
-  const starsMat = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 0.03,
-    transparent: true,
-    opacity: 0.7,
-  });
-  const stars = new THREE.Points(starsGeo, starsMat);
-  mainGroup.add(stars);
-
-  /* ---- calibration group (hidden by default) ---- */
+  /* ---- calibration group ---- */
   const calibrationGroup = new THREE.Group();
-  calibrationGroup.visible = false;
   scene.add(calibrationGroup);
+  addCalibrationScene(calibrationGroup);
 
-  const checkerTexture = createCheckerboardTexture(512, 8);
-  const checkerGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-  const checkerMat = new THREE.MeshStandardMaterial({
-    map: checkerTexture,
-    roughness: 0.6,
-  });
-  const checkerCube = new THREE.Mesh(checkerGeo, checkerMat);
-  calibrationGroup.add(checkerCube);
-  // checkerCube.position.z = -6;  // 往后推 3 个单位
+  /* ---- main scene group ---- */
+  const mainScene = new THREE.Group();
+  scene.add(mainScene);
 
-  // axis helper for spatial reference during calibration
-  calibrationGroup.add(new THREE.AxesHelper(2));
+  /* ---- cream room (non-calibration, hidden when calibrating) ---- */
+  const room = createRoom(mainScene);
 
-  return { scene, calibrationGroup, mainGroup };
+  /* ---- wireframe box (calibration mode only) ---- */
+  const box = addBox(mainScene);
+
+  return { scene, calibrationGroup, mainGroup: mainScene, box, room };
 }
 
-/**
- * Generate a checkerboard canvas texture at runtime (no external file needed).
- */
+/* ===================================================================
+ *  LIGHTING
+ * =================================================================== */
+
+function createLights(): THREE.Group {
+  const group = new THREE.Group();
+
+  // sky-ground natural ambient
+  const hemi = new THREE.HemisphereLight(0xffeedd, 0x8d7c6b, 0.6);
+  group.add(hemi);
+
+  // main shadow-casting sun
+  const sun = new THREE.DirectionalLight(0xfff5eb, 0.6);
+  sun.position.set(0.5, 1, 8);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 0.5;
+  sun.shadow.camera.far = 60;
+  sun.shadow.camera.left = -10;
+  sun.shadow.camera.right = 10;
+  sun.shadow.camera.top = 10;
+  sun.shadow.camera.bottom = -10;
+  sun.shadow.bias = -0.0005;
+  group.add(sun);
+
+  const point1 = new THREE.PointLight(0x66ccff, 2, 10);
+  point1.position.set(0.8, 1.5, -7.8);
+  group.add(point1);
+
+  const point2 = new THREE.PointLight(0x66ccff, 2, 10);
+  point2.position.set(-0.8, 1.5, -7.8);
+  group.add(point2);
+
+  const point3 = new THREE.PointLight(0x66ccff, 2, 10);
+  point3.position.set(0.8, 1.5, 0);
+  group.add(point3);
+
+  const point4 = new THREE.PointLight(0x66ccff, 2, 10);
+  point4.position.set(-0.8, 1.5, 0);
+  group.add(point4);
+
+  const point5 = new THREE.PointLight(0x66ccff, 2, 10);
+  point5.position.set(0.8, -1.5, -7.8);
+  group.add(point5);
+
+  const point6 = new THREE.PointLight(0x66ccff, 2, 10);
+  point6.position.set(-0.8, -1.5, -7.8);
+  group.add(point6);
+
+  return group;
+}
+
+/* ===================================================================
+ *  CREAM ROOM  (non-calibration)
+ * =================================================================== */
+
+function createRoom(parent: THREE.Group): THREE.Group {
+  const room = new THREE.Group();
+
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0xfaf8f5,
+    roughness: 0.85,
+    side: THREE.DoubleSide,
+  });
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: 0xf0ece4,
+    roughness: 0.7,
+    side: THREE.DoubleSide,
+  });
+
+  const geo = new THREE.PlaneGeometry(1, 1);
+
+  // floor — horizontal at y=-0.5, z offset=-0.5  (matching box coords)
+  const floor = new THREE.Mesh(geo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(0, -0.5, -0.5);
+  floor.receiveShadow = true;
+  room.add(floor);
+
+  // back wall — at z=-1
+  const backWall = new THREE.Mesh(geo, wallMat);
+  backWall.position.set(0, 0, -1);
+  backWall.receiveShadow = true;
+  room.add(backWall);
+
+  // left wall
+  const leftWall = new THREE.Mesh(geo, wallMat);
+  leftWall.rotation.y = Math.PI / 2;
+  leftWall.position.set(-0.5, 0, -0.5);
+  leftWall.receiveShadow = true;
+  room.add(leftWall);
+
+  // right wall
+  const rightWall = new THREE.Mesh(geo, wallMat);
+  rightWall.rotation.y = -Math.PI / 2;
+  rightWall.position.set(0.5, 0, -0.5);
+  rightWall.receiveShadow = true;
+  room.add(rightWall);
+
+  // ceiling
+  const ceiling = new THREE.Mesh(geo, wallMat);
+  ceiling.rotation.x = Math.PI / 2;
+  ceiling.position.set(0, 0.5, -0.5);
+  room.add(ceiling);
+
+  parent.add(room);
+  return room;
+}
+
+/* ===================================================================
+ *  WIREFRAME BOX  (calibration mode)
+ * =================================================================== */
+
+function addBox(parent: THREE.Group): THREE.Group {
+  const box = new THREE.Group();
+  const divisions = 10;
+
+  const gridBottom = new THREE.GridHelper(1, divisions, "white", "white");
+  gridBottom.position.y = -0.5;
+  gridBottom.position.z = -0.5;
+  box.add(gridBottom);
+
+  const gridTop = new THREE.GridHelper(1, divisions, "white", "white");
+  gridTop.position.y = 0.5;
+  gridTop.position.z = -0.5;
+  box.add(gridTop);
+
+  const gridLeft = new THREE.GridHelper(1, divisions, "white", "white");
+  gridLeft.position.x = -0.5;
+  gridLeft.position.z = -0.5;
+  gridLeft.rotation.z = Math.PI / 2;
+  box.add(gridLeft);
+
+  const gridRight = new THREE.GridHelper(1, divisions, "white", "white");
+  gridRight.position.x = 0.5;
+  gridRight.position.z = -0.5;
+  gridRight.rotation.z = Math.PI / 2;
+  box.add(gridRight);
+
+  const gridBack = new THREE.GridHelper(1, divisions, "white", "white");
+  gridBack.position.z = -1;
+  gridBack.rotation.x = Math.PI / 2;
+  box.add(gridBack);
+
+  parent.add(box);
+  return box;
+}
+
+/* ===================================================================
+ *  CALIBRATION CHECKERBOARD
+ * =================================================================== */
+
+function addCalibrationScene(parent: THREE.Group): void {
+  const geometry = new THREE.BoxGeometry();
+  const material = new THREE.MeshBasicMaterial({
+    map: createCheckerboardTexture(512, 8),
+  });
+  const cube = new THREE.Mesh(geometry, material);
+  cube.scale.multiplyScalar(0.5);
+  parent.add(cube);
+}
+
 function createCheckerboardTexture(
   size: number,
   squares: number,
@@ -142,23 +219,8 @@ function createCheckerboardTexture(
   }
 
   const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter; // crisp
+  tex.magFilter = THREE.NearestFilter;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   return tex;
-}
-
-/**
- * Update floating-object animations. Call once per frame.
- */
-export function animateScene(group: THREE.Group, time: number): void {
-  group.children.forEach((child: THREE.Object3D & { userData: Record<string, number> }) => {
-    if (child.userData?.floatSpeed !== undefined) {
-      child.position.y =
-        child.userData.baseY +
-        Math.sin(time * child.userData.floatSpeed + child.userData.phase) * 0.5;
-      child.rotation.x += 0.005 * child.userData.rotSpeed;
-      child.rotation.y += 0.008 * child.userData.rotSpeed;
-    }
-  });
 }

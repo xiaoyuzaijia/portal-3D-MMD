@@ -4,15 +4,10 @@ import { MMDAnimationHelper } from "three/examples/jsm/animation/MMDAnimationHel
 import type { MMDLoaderAnimationObject } from "three/examples/jsm/loaders/MMDLoader.js";
 
 /**
- * Loads MMD (MikuMikuDance) models and plays VMD animation.
+ * Loads MMD (MikuMikuDance) models and optionally plays VMD animation.
  *
  * Expects MMD files under public/mmd/ (copy from the original
  * head-tracked-3d project's docs/mmd/ directory).
- *
- * Usage:
- *   const mmd = new MMDManager(scene);
- *   await mmd.load("./mmd/miku-yyb/miku.pmx", ["./mmd/vmds/wavefile_v2.vmd"]);
- *   // in render loop: mmd.update(deltaSeconds);
  */
 export class MMDManager {
   readonly container: THREE.Object3D;
@@ -33,8 +28,31 @@ export class MMDManager {
   }
 
   /**
-   * Load a PMX model with optional VMD motion files.
-   * Returns the SkinnedMesh once ready.
+   * Load a PMX model without any animation (static pose).
+   *
+   * Uses MMDLoader.load() (not loadPMX) because loadPMX returns raw
+   * parsed data, not a built SkinnedMesh.
+   */
+  loadModel(modelPath: string): Promise<THREE.SkinnedMesh> {
+    return new Promise((resolve, reject) => {
+      this.loader.load(
+        modelPath,
+        (mesh) => {
+          mesh.scale.set(0.15, 0.15, 0.15);
+          this.container.add(mesh);
+          this.meshes.push(mesh);
+          resolve(mesh);
+        },
+        undefined,
+        (error: unknown) => {
+          reject(new Error("MMD model not found: " + modelPath));
+        },
+      );
+    });
+  }
+
+  /**
+   * Load a PMX model with VMD motion files.
    */
   load(
     modelPath: string,
@@ -46,7 +64,6 @@ export class MMDManager {
         vmdPaths,
         (object: MMDLoaderAnimationObject) => {
           const mesh = object.mesh;
-          mesh.scale.set(0.025, 0.025, 0.025);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
 
