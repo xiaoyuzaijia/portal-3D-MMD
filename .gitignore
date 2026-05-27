@@ -8,16 +8,13 @@ dist/
 public/mmd/
 public/libs/
 
-# === 旧参考项目 ===
-old/
-
 # === 环境变量 ===
 .env
 .env.local
 .env.*.local
 
 # === IDE ===
-.vscode/*
+.vscode/
 !.vscode/settings.json
 !.vscode/extensions.json
 .idea/

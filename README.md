@@ -1,6 +1,7 @@
 # portal-3D-MMD
 
 使用摄像头进行脸部捕捉，然后在显示屏上实现传送门效果的裸眼3D。
+[我的天依会动？！](https://www.bilibili.com/video/BV1m2GU6EE2V)
 
 ## 硬件
 
