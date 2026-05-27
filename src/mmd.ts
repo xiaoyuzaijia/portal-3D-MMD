@@ -3,11 +3,16 @@ import { MMDLoader } from "three/examples/jsm/loaders/MMDLoader.js";
 import { MMDAnimationHelper } from "three/examples/jsm/animation/MMDAnimationHelper.js";
 import type { MMDLoaderAnimationObject } from "three/examples/jsm/loaders/MMDLoader.js";
 
+let ammoReady = false;
+
 /**
  * Loads MMD (MikuMikuDance) models and optionally plays VMD animation.
  *
  * Expects MMD files under public/mmd/ (copy from the original
  * head-tracked-3d project's docs/mmd/ directory).
+ *
+ * Call MMDManager.initAmmo() once before creating any instance to enable
+ * physics (hair, skirt, etc.).
  */
 export class MMDManager {
   readonly container: THREE.Object3D;
@@ -15,16 +20,35 @@ export class MMDManager {
   readonly loader: MMDLoader;
 
   private meshes: THREE.SkinnedMesh[] = [];
-  private clock = new THREE.Clock();
+  private physicsEnabled: boolean;
 
   constructor(container: THREE.Object3D) {
     this.container = container;
+    this.physicsEnabled = ammoReady;
 
     this.helper = new MMDAnimationHelper({
       afterglow: 2.0,
     });
 
     this.loader = new MMDLoader();
+  }
+
+  /**
+   * Initialize Ammo.js WebAssembly physics engine.
+   * Must be called once before loading any MMD model with physics enabled.
+   */
+  static async initAmmo(): Promise<void> {
+    if (ammoReady) return;
+
+    const AmmoFactory = await import("three/examples/jsm/libs/ammo.wasm.js");
+    const ammoModule: Record<string, unknown> = {
+      locateFile: (filename: string) => `/libs/${filename}`,
+    };
+
+    await (AmmoFactory as any).default(ammoModule);
+
+    (window as any).Ammo = ammoModule;
+    ammoReady = true;
   }
 
   /**
@@ -71,7 +95,7 @@ export class MMDManager {
           this.meshes.push(mesh);
           this.helper.add(mesh, {
             animation: object.animation,
-            physics: false,
+            physics: this.physicsEnabled,
           });
           resolve(mesh);
         },

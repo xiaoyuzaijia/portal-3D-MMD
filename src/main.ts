@@ -5,6 +5,7 @@ import { createScene } from "./scene";
 import { MMDManager } from "./mmd";
 import { DebugOverlay } from "./debug-overlay";
 import type { CalibrationParams } from "./calibration";
+import { ACTIVE_PRESET } from "./config";
 
 /* ===================================================================
  *  BOOTSTRAP
@@ -71,21 +72,22 @@ async function main(): Promise<void> {
     cal.headTrack = false;
   }
 
-  /* ---- Luo Tianyi MMD model + animation ---- */
-  const luoModelPath = "./mmd/model/牛肉式 洛天依AI Ver1.01/牛肉式 洛天依AI Ver1.01.pmx";
-  const vmdPath = "./mmd/vmd/badwater/我的悲伤是水做的动作数据配布.vmd";
+  /* ---- MMD model + animation (from config) ---- */
+  const { model: modelCfg, animation: animCfg } = ACTIVE_PRESET;
   let mmd: MMDManager | null = null;
   let mmdMesh: THREE.SkinnedMesh | null = null;
   try {
-    setStatus("Loading Luo Tianyi model...");
+    setStatus("Loading Ammo.js physics...");
+    await MMDManager.initAmmo();
+    setStatus("Loading MMD model...");
     mmd = new MMDManager(mainGroup);
-    mmdMesh = await mmd.load(luoModelPath, [vmdPath]);
-    mmdMesh.scale.setScalar(0.15);
-    mmdMesh.position.set(0, -1.7, -2.8);
-    mmdMesh.rotation.y = 0;
-    debug.update("Luo Tianyi loaded ✓");
+    mmdMesh = await mmd.load(modelCfg.path, animCfg.vmdPaths);
+    mmdMesh.scale.setScalar(modelCfg.scale);
+    mmdMesh.position.set(...modelCfg.position);
+    mmdMesh.rotation.y = modelCfg.rotationY;
+    debug.update("MMD model loaded ✓");
   } catch {
-    console.warn("Luo Tianyi model not found (skipped):", luoModelPath);
+    console.warn("MMD model not found (skipped):", modelCfg.path);
   }
 
   /* ---- loading complete ---- */

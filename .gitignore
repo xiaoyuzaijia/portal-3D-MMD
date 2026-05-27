@@ -4,8 +4,9 @@ node_modules/
 # === 构建产物 ===
 dist/
 
-# === MMD 模型文件===
+# === MMD 文件===
 public/mmd/
+public/libs/
 
 # === 旧参考项目 ===
 old/
