@@ -1,5 +1,5 @@
 {
-  "name": "head-tracked-3d-v2",
+  "name": "portal-3d-mmd",
   "version": "1.0.0",
   "description": "Glasses-free 3D display — head tracking (MediaPipe) + calibration + MMD support + Three.js",
   "type": "module",

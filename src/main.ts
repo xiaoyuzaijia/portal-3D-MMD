@@ -76,9 +76,19 @@ async function main(): Promise<void> {
   const { model: modelCfg, animation: animCfg } = ACTIVE_PRESET;
   let mmd: MMDManager | null = null;
   let mmdMesh: THREE.SkinnedMesh | null = null;
+
+  setStatus("Loading Ammo.js physics...");
   try {
-    setStatus("Loading Ammo.js physics...");
     await MMDManager.initAmmo();
+    debug.update("Ammo.js ready ✓");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Ammo.js init failed:", msg, err);
+    debug.update(`<span style="color:#f44">Ammo.js init FAILED:</span> ${msg}`);
+    return; // don't continue without physics
+  }
+
+  try {
     setStatus("Loading MMD model...");
     mmd = new MMDManager(mainGroup);
     mmdMesh = await mmd.load(modelCfg.path, animCfg.vmdPaths);
@@ -86,8 +96,10 @@ async function main(): Promise<void> {
     mmdMesh.position.set(...modelCfg.position);
     mmdMesh.rotation.y = modelCfg.rotationY;
     debug.update("MMD model loaded ✓");
-  } catch {
-    console.warn("MMD model not found (skipped):", modelCfg.path);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("MMD model load failed:", msg, err);
+    debug.update(`<span style="color:#f44">MMD load FAILED:</span> ${msg}`);
   }
 
   /* ---- loading complete ---- */

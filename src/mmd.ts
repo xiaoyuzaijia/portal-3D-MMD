@@ -45,7 +45,16 @@ export class MMDManager {
       locateFile: (filename: string) => `/libs/${filename}`,
     };
 
-    await (AmmoFactory as any).default(ammoModule);
+    // CJS interop: bundled builds may emit .default or put the function
+    // directly on the module namespace.
+    const AmmoFn =
+      typeof (AmmoFactory as any).default === "function"
+        ? (AmmoFactory as any).default
+        : AmmoFactory;
+
+    // .call() fixes strict-mode ESM: the ammo.wasm.js UMD code does
+    // `this.Ammo = b` which fails with `this === undefined` in modules.
+    await AmmoFn.call(window, ammoModule);
 
     (window as any).Ammo = ammoModule;
     ammoReady = true;

@@ -4,7 +4,7 @@
 
 ## 硬件
 
-你至少需要一个摄像和显示器，最好是16:9的显示器并将它竖屏摆放。
+你至少需要一个摄像头和显示器，最好是16:9的显示器并将它竖屏摆放。
 
 ## MMD
 
@@ -13,9 +13,15 @@
 ## 依赖
 
 - [Node.js](https://nodejs.org/) >= 18
-- 克隆项目后运行 `npm install` 安装依赖（Three.js 0.170、Tweakpane 4）
-- 摄像头（MediaPipe FaceMesh 通过 CDN 加载，无需额外安装）
-- 现代浏览器（Chrome / Edge 推荐）
+- 克隆项目后运行 `npm install` 安装依赖
+
+## 运行
+
+```bash
+npm run dev          # 启动开发服务器 → http://localhost:5173
+npm run build        # 构建生产版本 → dist/
+npm run preview      # 本地预览构建结果
+```
 
 ## 校准
 

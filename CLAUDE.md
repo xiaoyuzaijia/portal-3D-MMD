@@ -17,10 +17,6 @@ There are no tests yet. When adding them, use Vitest (add as devDependency).
 
 Glasses-free 3D display demo. A head-tracked Three.js scene that uses off-axis projection to create motion parallax — when you move your head, the 3D perspective shifts as if the screen were a window into a real 3D space. Renders an MMD model (Luo Tianyi) with VMD dance animation inside a cream-coloured room.
 
-Two older projects live under `old/` for reference:
-- `old/head-tracked-3d/` — original prototype (TF.js + Three.js 0.130, Tweakpane calibration, MMD, Webpack)
-- `old/3d-web/` — full-stack rewrite (React Router 7 + Vite + MediaPipe CDN, no calibration/MMD)
-
 ## Architecture
 
 ```
