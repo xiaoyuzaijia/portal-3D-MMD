@@ -5,6 +5,9 @@ import type { MMDLoaderAnimationObject } from "three/examples/jsm/loaders/MMDLoa
 
 let ammoReady = false;
 
+/** Base path for static assets (respects Vite's base config for deployment) */
+const STATIC_BASE = import.meta.env.BASE_URL;
+
 /**
  * Loads MMD (MikuMikuDance) models and optionally plays VMD animation.
  *
@@ -22,15 +25,26 @@ export class MMDManager {
   private meshes: THREE.SkinnedMesh[] = [];
   private physicsEnabled: boolean;
 
+  /** Stored model/animation info for reload-on-loop support */
+  private _lastModelPath: string | null = null;
+  private _lastVmdPaths: string[] = [];
+  private _looped = false;
+
   constructor(container: THREE.Object3D) {
     this.container = container;
     this.physicsEnabled = ammoReady;
 
     this.helper = new MMDAnimationHelper({
       afterglow: 2.0,
+      resetPhysicsOnLoop: true,
     });
 
     this.loader = new MMDLoader();
+  }
+
+  /** Whether the animation has looped and a reload is needed */
+  get looped(): boolean {
+    return this._looped;
   }
 
   /**
@@ -42,7 +56,7 @@ export class MMDManager {
 
     const AmmoFactory = await import("three/examples/jsm/libs/ammo.wasm.js");
     const ammoModule: Record<string, unknown> = {
-      locateFile: (filename: string) => `/libs/${filename}`,
+      locateFile: (filename: string) => `${STATIC_BASE}libs/${filename}`,
     };
 
     // CJS interop: bundled builds may emit .default or put the function
@@ -106,6 +120,27 @@ export class MMDManager {
             animation: object.animation,
             physics: this.physicsEnabled,
           });
+
+          // Store model info for potential reload
+          this._lastModelPath = modelPath;
+          this._lastVmdPaths = vmdPaths;
+
+          // Listen for animation loop to set the reload flag.
+          // The helper already filters non-bone track loops — we piggyback
+          // on its internal mixer to detect loops reliably.
+          const mixer = (this.helper as any).objects?.get(mesh)?.mixer;
+          if (mixer) {
+            mixer.addEventListener("loop", (event: any) => {
+              const tracks = event.action?._clip?.tracks;
+              if (
+                tracks?.length > 0 &&
+                tracks[0].name.slice(0, 6) !== ".bones"
+              )
+                return;
+              this._looped = true;
+            });
+          }
+
           resolve(mesh);
         },
         (_progress: ProgressEvent) => {
@@ -120,6 +155,25 @@ export class MMDManager {
   }
 
   /**
+   * Call when `looped` is true to remove the current model and reload it
+   * from scratch with fresh physics. Returns the new mesh.
+   */
+  async reload(): Promise<THREE.SkinnedMesh> {
+    if (!this._lastModelPath) {
+      throw new Error("No model has been loaded — cannot reload");
+    }
+
+    // Remove all existing meshes
+    for (const mesh of [...this.meshes]) {
+      this.remove(mesh);
+    }
+
+    this._looped = false;
+
+    return this.load(this._lastModelPath, this._lastVmdPaths);
+  }
+
+  /**
    * Call every frame with the frame delta in seconds.
    */
   update(delta: number): void {
@@ -128,6 +182,7 @@ export class MMDManager {
 
   /**
    * Remove a loaded mesh from the scene.
+   * Also disposes GPU resources (geometry, materials, textures).
    */
   remove(mesh: THREE.SkinnedMesh): void {
     const idx = this.meshes.indexOf(mesh);
@@ -135,6 +190,29 @@ export class MMDManager {
       this.helper.remove(mesh);
       this.container.remove(mesh);
       this.meshes.splice(idx, 1);
+
+      // Dispose GPU resources to avoid memory leaks on reload
+      mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry?.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((m) => m.dispose());
+          } else {
+            child.material?.dispose();
+          }
+        }
+      });
     }
+  }
+
+  /**
+   * Fully dispose the manager, removing all meshes and freeing resources.
+   */
+  dispose(): void {
+    for (const mesh of [...this.meshes]) {
+      this.remove(mesh);
+    }
+    this._lastModelPath = null;
+    this._lastVmdPaths = [];
   }
 }

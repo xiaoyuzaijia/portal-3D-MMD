@@ -76,6 +76,7 @@ async function main(): Promise<void> {
   const { model: modelCfg, animation: animCfg } = ACTIVE_PRESET;
   let mmd: MMDManager | null = null;
   let mmdMesh: THREE.SkinnedMesh | null = null;
+  let reloading = false; // guard against concurrent reloads
 
   setStatus("Loading Ammo.js physics...");
   try {
@@ -88,8 +89,33 @@ async function main(): Promise<void> {
     return; // don't continue without physics
   }
 
+  /**
+   * Reload the MMD model from scratch (called when animation loops).
+   * The old mesh has already been removed by mmd.reload().
+   */
+  async function reloadMMDModel(): Promise<void> {
+    if (!mmd || reloading) return;
+    reloading = true;
+    try {
+      setStatus("Reloading MMD model...");
+      debug.update("Animation looped — reloading model with fresh physics...");
+      mmdMesh = await mmd.reload();
+      mmdMesh.scale.setScalar(modelCfg.scale);
+      mmdMesh.position.set(...modelCfg.position);
+      mmdMesh.rotation.y = modelCfg.rotationY;
+      debug.update("MMD model reloaded ✓");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("MMD reload failed:", msg, err);
+      debug.update(
+        `<span style="color:#f44">MMD reload FAILED:</span> ${msg}`,
+      );
+    } finally {
+      reloading = false;
+    }
+  }
+
   try {
-    setStatus("Loading MMD model...");
     mmd = new MMDManager(mainGroup);
     mmdMesh = await mmd.load(modelCfg.path, animCfg.vmdPaths);
     mmdMesh.scale.setScalar(modelCfg.scale);
@@ -187,6 +213,12 @@ async function main(): Promise<void> {
 
     // MMD animation
     if (mmd) mmd.update(dt);
+
+    // Reload model when animation loops to avoid physics explosion
+    // caused by bones instantly snapping while rigid bodies retain velocity
+    if (mmd?.looped && !reloading) {
+      reloadMMDModel();
+    }
 
     // head tracking → camera
     if (cal.headTrack && tracker.ready) {
