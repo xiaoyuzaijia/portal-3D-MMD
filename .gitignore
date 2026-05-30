@@ -1,0 +1,33 @@
+# === 依赖 ===
+node_modules/
+
+# === 构建产物 ===
+dist/
+
+# === MMD 文件===
+public/mmd/
+public/libs/
+
+# === 环境变量 ===
+.env
+.env.local
+.env.*.local
+
+# === IDE ===
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+.claude/
+
+# === 操作系统 ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === TypeScript ===
+*.tsbuildinfo
+
+# === 日志 ===
+*.log
+npm-debug.log*
